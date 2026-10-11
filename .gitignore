@@ -1,0 +1,9 @@
+# Rust
+desktop/target/
+
+# Editors / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

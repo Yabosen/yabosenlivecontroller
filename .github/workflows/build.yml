@@ -29,6 +29,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop
+          # Per image: C code compiled against a newer glibc won't link on an older one.
+          key: ${{ matrix.os }}
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |

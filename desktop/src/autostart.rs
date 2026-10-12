@@ -3,7 +3,12 @@
 use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 
 fn launcher() -> Result<AutoLaunch, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // Inside an AppImage the running binary lives in a temporary mount; start the
+    // AppImage file itself instead.
+    let exe = match std::env::var_os("APPIMAGE") {
+        Some(appimage) => std::path::PathBuf::from(appimage),
+        None => std::env::current_exe().map_err(|e| e.to_string())?,
+    };
     AutoLaunchBuilder::new()
         .set_app_name("Yabosen Controller")
         .set_app_path(&exe.to_string_lossy())

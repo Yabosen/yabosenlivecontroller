@@ -1,0 +1,27 @@
+# Maintainer: Yabosen <91219640+Yabosen@users.noreply.github.com>
+#
+# Packages the prebuilt Linux binary. CI copies the binary and desktop/assets/*
+# next to this file and sets pkgver from the release tag before running makepkg.
+
+pkgname=yabosen-controller
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="Desktop controller for the live status on yabosen.live"
+arch=('x86_64')
+url="https://github.com/Yabosen/yabosenlivecontroller"
+license=('MIT')
+depends=('gcc-libs' 'glibc' 'wayland' 'libxkbcommon' 'libglvnd')
+optdepends=('discord: show your status as Rich Presence')
+options=('!debug' '!strip')
+source=('yabosen-controller'
+        'yabosen-controller.desktop'
+        'yabosen-controller.png'
+        'yabosen-controller.svg')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
+
+package() {
+    install -Dm755 yabosen-controller "$pkgdir/usr/bin/yabosen-controller"
+    install -Dm644 yabosen-controller.desktop "$pkgdir/usr/share/applications/yabosen-controller.desktop"
+    install -Dm644 yabosen-controller.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/yabosen-controller.png"
+    install -Dm644 yabosen-controller.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/yabosen-controller.svg"
+}

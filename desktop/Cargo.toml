@@ -30,6 +30,30 @@ regex = "1"
 winreg = "0.56"
 tray-icon = "0.26"
 
+# `cargo deb --no-build` (Debian/Ubuntu)
+[package.metadata.deb]
+maintainer = "Yabosen <91219640+Yabosen@users.noreply.github.com>"
+copyright = "2026, Yabosen"
+extended-description = "Controls the live status on yabosen.live: status, custom message, activity, heartbeat, OBS/Steam/Last.fm auto-detect and Discord Rich Presence."
+section = "utils"
+priority = "optional"
+depends = "$auto"
+assets = [
+    ["target/release/yabosen-controller", "usr/bin/", "755"],
+    ["assets/yabosen-controller.desktop", "usr/share/applications/", "644"],
+    ["assets/yabosen-controller.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
+    ["assets/yabosen-controller.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+]
+
+# `cargo generate-rpm` (Fedora/openSUSE)
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/yabosen-controller", dest = "/usr/bin/yabosen-controller", mode = "755" },
+    { source = "assets/yabosen-controller.desktop", dest = "/usr/share/applications/yabosen-controller.desktop", mode = "644" },
+    { source = "assets/yabosen-controller.png", dest = "/usr/share/icons/hicolor/256x256/apps/yabosen-controller.png", mode = "644" },
+    { source = "assets/yabosen-controller.svg", dest = "/usr/share/icons/hicolor/scalable/apps/yabosen-controller.svg", mode = "644" },
+]
+
 [profile.release]
 lto = "thin"
 strip = true

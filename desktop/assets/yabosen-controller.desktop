@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Yabosen Controller
+GenericName=Live Status Controller
+Comment=Control your live status on yabosen.live
+Exec=yabosen-controller
+Icon=yabosen-controller
+Terminal=false
+Categories=Utility;Network;
+Keywords=status;yabosen;discord;heartbeat;
+StartupWMClass=yabosen-controller

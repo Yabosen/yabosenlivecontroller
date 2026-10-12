@@ -1,0 +1,284 @@
+name: Release
+
+# Push a tag like v1.0.0 (matching desktop/Cargo.toml) to build every package,
+# publish a GitHub Release, and then test the one-line installers on each distro.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and publish, e.g. v1.0.0
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  version:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - id: v
+        run: |
+          version="${TAG#v}"
+          cargo_version=$(grep -m1 '^version' desktop/Cargo.toml | cut -d'"' -f2)
+          if [ "$version" != "$cargo_version" ]; then
+            echo "::error::Tag $TAG doesn't match desktop/Cargo.toml version $cargo_version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: Windows
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+      - run: cargo build --release --locked
+        working-directory: desktop
+      - run: Copy-Item desktop/target/release/yabosen-controller.exe yabosen-controller-windows-x64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: yabosen-controller-windows-x64.exe
+
+  linux:
+    name: Linux (deb, rpm, AppImage)
+    needs: version
+    # Built on the oldest supported Ubuntu so the binary's glibc needs stay low
+    # enough for Debian 12, Ubuntu 22.04 and everything newer.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libwayland-dev libx11-dev
+      - run: cargo build --release --locked
+        working-directory: desktop
+      - name: Install packaging tools
+        run: cargo install --locked cargo-deb cargo-generate-rpm
+      - name: Build .deb and .rpm
+        working-directory: desktop
+        run: |
+          cargo deb --no-build --no-strip
+          cargo generate-rpm
+      - name: Build AppImage
+        run: |
+          app=desktop/target/release/yabosen-controller
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          cp "$app" AppDir/usr/bin/
+          cp desktop/assets/yabosen-controller.desktop AppDir/
+          cp desktop/assets/yabosen-controller.desktop AppDir/usr/share/applications/
+          cp desktop/assets/yabosen-controller.png AppDir/
+          cp desktop/assets/yabosen-controller.png AppDir/usr/share/icons/hicolor/256x256/apps/
+          ln -s usr/bin/yabosen-controller AppDir/AppRun
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir yabosen-controller-x86_64.AppImage
+      - name: Collect files
+        run: |
+          mkdir -p dist bundle
+          cp desktop/target/debian/*.deb dist/yabosen-controller-amd64.deb
+          cp desktop/target/generate-rpm/*.rpm dist/yabosen-controller-x86_64.rpm
+          cp yabosen-controller-x86_64.AppImage dist/
+          cp desktop/assets/yabosen-controller.png dist/
+          cp desktop/target/release/yabosen-controller desktop/assets/yabosen-controller.{desktop,png,svg} bundle/
+          tar -czf dist/yabosen-controller-linux-x86_64.tar.gz -C bundle .
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*
+
+  arch:
+    name: Arch Linux package
+    needs: [version, linux]
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: linux
+      - name: makepkg
+        run: |
+          mkdir pkg
+          tar -xzf linux/yabosen-controller-linux-x86_64.tar.gz -C pkg
+          cp packaging/arch/PKGBUILD pkg/
+          sed -i "s/^pkgver=.*/pkgver=${{ needs.version.outputs.version }}/" pkg/PKGBUILD
+          useradd -m builder
+          chown -R builder pkg
+          su builder -c "cd pkg && makepkg -f --nodeps --noconfirm"
+          cp pkg/yabosen-controller-*-x86_64.pkg.tar.zst yabosen-controller-x86_64.pkg.tar.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch
+          path: yabosen-controller-x86_64.pkg.tar.zst
+
+  android:
+    name: Android
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.6"
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build apk --release --build-name=${{ needs.version.outputs.version }} --build-number=${{ github.run_number }}
+      - run: cp build/app/outputs/flutter-apk/app-release.apk ../yabosen-controller-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: yabosen-controller-android.apk
+
+  release:
+    name: Publish release
+    needs: [version, windows, linux, arch, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Add installers and checksums
+        run: |
+          cp install.sh install.ps1 dist/
+          cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - name: Write release notes
+        run: |
+          base="https://github.com/${{ github.repository }}/releases/latest/download"
+          cat > notes.md <<EOF
+          ## Install
+
+          **Windows** (PowerShell):
+          \`\`\`powershell
+          irm $base/install.ps1 | iex
+          \`\`\`
+
+          **Linux** (Debian/Ubuntu, Fedora, Arch, or anything else via AppImage):
+          \`\`\`bash
+          curl -fsSL $base/install.sh | sh
+          \`\`\`
+
+          **Android:** download \`yabosen-controller-android.apk\` below and open it on your phone.
+
+          Or grab a file directly:
+
+          | File | For |
+          |---|---|
+          | \`yabosen-controller-windows-x64.exe\` | Windows 10/11 (portable, no install needed) |
+          | \`yabosen-controller-amd64.deb\` | Debian, Ubuntu, Mint, Pop!_OS |
+          | \`yabosen-controller-x86_64.rpm\` | Fedora, RHEL, openSUSE |
+          | \`yabosen-controller-x86_64.pkg.tar.zst\` | Arch, Manjaro, EndeavourOS (\`sudo pacman -U\`) |
+          | \`yabosen-controller-x86_64.AppImage\` | Any Linux distro |
+          | \`yabosen-controller-linux-x86_64.tar.gz\` | Plain Linux binary + icon + desktop file |
+          | \`yabosen-controller-android.apk\` | Android 7+ |
+
+          After installing, open **Settings** in the app and paste your website's \`STATUS_API_KEY\`.
+          EOF
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "Yabosen Controller $TAG" --notes-file notes.md --verify-tag
+          fi
+
+  # Runs the real one-line installers against the release that was just published.
+  verify-linux:
+    name: Install on ${{ matrix.image }}
+    needs: release
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:12", "ubuntu:22.04", "ubuntu:24.04", "fedora:latest", "archlinux:latest"]
+    steps:
+      - name: Get curl
+        run: |
+          if command -v apt-get >/dev/null; then apt-get update && apt-get install -y curl ca-certificates; fi
+          # Fresh Arch containers ship without package databases; real installs have them.
+          if command -v pacman >/dev/null; then pacman -Sy --noconfirm; fi
+          command -v curl
+      - name: Install with install.sh
+        run: |
+          curl -fsSL -o install.sh "https://github.com/${{ github.repository }}/releases/download/$TAG/install.sh"
+          sh install.sh --version "$TAG"
+      - name: Run it
+        run: yabosen-controller --version
+      - name: Uninstall
+        run: |
+          sh install.sh --uninstall
+          ! command -v yabosen-controller
+
+  verify-appimage:
+    name: Install AppImage
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          sudo apt-get update && sudo apt-get install -y libwayland-client0
+          curl -fsSL "https://github.com/${{ github.repository }}/releases/download/$TAG/install.sh" | sh -s -- --appimage --version "$TAG"
+          APPIMAGE_EXTRACT_AND_RUN=1 ~/.local/bin/yabosen-controller.AppImage --version
+          test -f ~/.local/share/applications/yabosen-controller.desktop
+
+  verify-windows:
+    name: Install on Windows
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - shell: pwsh
+        run: |
+          $env:YABOSEN_CONTROLLER_VERSION = $env:TAG
+          $env:YABOSEN_CONTROLLER_NO_LAUNCH = '1'
+          irm "https://github.com/${{ github.repository }}/releases/download/$env:TAG/install.ps1" | iex
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\Yabosen Controller'
+          if (-not (Test-Path "$dir\yabosen-controller.exe")) { throw 'exe missing' }
+          if (-not (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\YabosenController')) { throw 'uninstall entry missing' }
+          $p = Start-Process "$dir\yabosen-controller.exe" -ArgumentList '--version' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "exe exited with $($p.ExitCode)" }
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\uninstall.ps1"
+          if (Test-Path $dir) { throw 'uninstall left files behind' }

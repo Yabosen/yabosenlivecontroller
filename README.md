@@ -9,6 +9,33 @@ Controls the live status shown on [yabosen.live](https://yabosen.live): pick Onl
 
 Both talk to the website's API with your `STATUS_API_KEY` (the "password" from the old app).
 
+## Install
+
+**Windows** (PowerShell, no admin needed):
+
+```powershell
+irm https://github.com/Yabosen/yabosenlivecontroller/releases/latest/download/install.ps1 | iex
+```
+
+Installs to `%LOCALAPPDATA%\Programs\Yabosen Controller`, adds a Start Menu shortcut, and shows up in **Settings → Apps** for uninstalling. Run it again to update.
+
+**Linux** (x86_64):
+
+```bash
+curl -fsSL https://github.com/Yabosen/yabosenlivecontroller/releases/latest/download/install.sh | sh
+```
+
+It picks the package for your system: `.deb` on Debian/Ubuntu/Mint/Pop!_OS, `.rpm` on Fedora/RHEL/openSUSE, `.pkg.tar.zst` on Arch/Manjaro/EndeavourOS, and the AppImage on anything else. Options go after `sh -s --`:
+
+```bash
+curl -fsSL https://github.com/Yabosen/yabosenlivecontroller/releases/latest/download/install.sh | sh -s -- --appimage   # user-only AppImage, no root
+curl -fsSL https://github.com/Yabosen/yabosenlivecontroller/releases/latest/download/install.sh | sh -s -- --uninstall
+```
+
+**Android:** download `yabosen-controller-android.apk` from the [latest release](https://github.com/Yabosen/yabosenlivecontroller/releases/latest) and open it on your phone.
+
+Every file is also listed on the [releases page](https://github.com/Yabosen/yabosenlivecontroller/releases) if you'd rather install by hand. After installing, open **Settings** in the app and paste your API key.
+
 ## How the status works
 
 - The PC app sends a **heartbeat** every 60 s while it's open. If the site stops hearing from the PC for 3 minutes, it shows you as **Idle**. Quitting the PC app never sets Offline; you only go Offline by picking it.
@@ -55,7 +82,7 @@ Notes:
 
 See [`mobile/README.md`](mobile/README.md).
 
-## CI
+## CI and releases
 
 [`.github/workflows/build.yml`](.github/workflows/build.yml) builds and tests on every push to `main`:
 
@@ -63,3 +90,12 @@ See [`mobile/README.md`](mobile/README.md).
 - the Android APK
 
 The finished files can be downloaded from each run's **Artifacts** section on GitHub.
+
+To publish a release, bump `version` in `desktop/Cargo.toml` (and `mobile/pubspec.yaml`), commit, then push a matching tag:
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) then builds every package, publishes the GitHub Release with checksums and the install scripts, and finally runs the one-line installers on Debian, Ubuntu, Fedora, Arch, an AppImage and Windows to make sure they work.

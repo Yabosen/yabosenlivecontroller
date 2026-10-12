@@ -17,6 +17,10 @@ mod tray;
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    if std::env::args().any(|a| a == "--version" || a == "-V") {
+        println!("yabosen-controller {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     let Some(instance) = single::acquire() else {
         // Already running; it has been asked to show its window.
         return Ok(());
